@@ -1,12 +1,6 @@
-package controllers
+package controller
 
 import "github.com/astaxie/beego"
-
-type Response struct {
-	Code    int64       `json:"code"`
-	Message string      `json:"message"`
-	Data    interface{} `json:"data"`
-}
 
 type MainController struct {
 	beego.Controller

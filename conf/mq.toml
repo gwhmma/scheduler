@@ -1,0 +1,2 @@
+url = "amqp://guest:guest@mq:5672"
+queue = "alert"

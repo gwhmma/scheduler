@@ -1,8 +1,11 @@
-package alert
+package common
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/BurntSushi/toml"
 	"github.com/go-gomail/gomail"
+	"github.com/streadway/amqp"
 )
 
 type Alert struct {
@@ -22,7 +25,6 @@ type AlertsInfo struct {
 
 // 如果该节点不再是leader 那么就取消他的告警功能
 var LoseLeader chan struct{}
-var AlertsEvent chan *AlertsInfo
 var GM *gomail.Message
 
 func loadEmailCfg(path string) (*Alert, error) {
@@ -40,7 +42,7 @@ func InitAlert(path string) error {
 		return err
 	}
 
-	GM := gomail.NewMessage()
+	GM = gomail.NewMessage()
 	GM.SetHeader("To", cfg.ToEmail)
 	GM.SetAddressHeader("From", cfg.FromEmail, "")
 
@@ -49,16 +51,72 @@ func InitAlert(path string) error {
 	return nil
 }
 
-func (a *Alert) alertLoop() {
+func (a *Alert) alertLoop() error {
+	conn, err := amqp.Dial(mqcfg.Url)
+	defer conn.Close()
+	if err != nil {
+		return err
+	}
+
+	// 创建channel
+	ch, err := conn.Channel()
+	defer ch.Close()
+	if err != nil {
+		return err
+	}
+
+	queue, err := ch.QueueDeclare(mqcfg.Queue, false, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+
+	// 消费数据
+	msgs, err := ch.Consume(queue.Name, "", true, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+
 	for {
 		select {
 		case <-LoseLeader: // 如果该节点不再是leader 那么就取消他的告警功能
 			goto END
-		case alerts := <-AlertsEvent:
-			a.sendMail(alerts)
+		case msg := <-msgs:
+			go func() {
+				alert := &AlertsInfo{}
+				json.Unmarshal(msg.Body, alert)
+				wrap(alert)
+				//if err := a.sendMail(alert); err !=nil {
+				//	fmt.Println("send err : ", err)
+				//	return
+				//}
+			}()
 		}
+	END:
 	}
-END:
+
+	return nil
+}
+
+func wrap(alert *AlertsInfo) {
+	if alert != nil {
+		fmt.Println("************************ 告警信息 ************************")
+		fmt.Println()
+		fmt.Println("告警节点 : ", alert.Worker)
+		tpe := ""
+		switch alert.AlertType {
+		case 1:
+			tpe = "超时"
+		case 2:
+			tpe = "执行出错"
+		case 3:
+			tpe = "任务被强制杀死"
+		}
+		fmt.Println("告警类型 : ", tpe)
+		fmt.Println("告警时间 : ", alert.Time)
+		fmt.Println("告警具体信息 : ", alert.ErrorInfo)
+		fmt.Println()
+		fmt.Println("*********************************************************")
+	}
 }
 
 // 发送告警邮件
@@ -69,11 +127,15 @@ func (a *Alert) sendMail(alert *AlertsInfo) error {
 		tpe = "超时"
 	case 2:
 		tpe = "执行出错"
+	case 3:
+		tpe = "任务被强制杀死"
 	}
 
 	body := "<h2> 告警类型 : " + tpe + "</h2>\n"
 	body += "<p>告警节点 : " + alert.Worker + "</p>\n"
 	body += "<p>告警信息 : " + alert.ErrorInfo + "</p>\n"
+
+	//fmt.Println("GM : ", GM)
 
 	gm := GM
 	gm.SetBody("text/html", body)
@@ -85,10 +147,6 @@ func (a *Alert) sendMail(alert *AlertsInfo) error {
 	}
 
 	return nil
-}
-
-func SendAlertInfo(alerts *AlertsInfo) {
-	AlertsEvent <- alerts
 }
 
 func StopAlerts() {
