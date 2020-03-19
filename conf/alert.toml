@@ -1,0 +1,7 @@
+#授权码 gwhmma123
+
+host = "smtp.163.com"
+port = 25
+from_email = "gwhmma@163.com"
+password = "abcd1234"
+to_email = "gwhmma@163.com"

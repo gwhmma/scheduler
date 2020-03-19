@@ -1,0 +1,194 @@
+version: "3.6"
+
+networks:
+  scheduler:
+
+services:
+
+  mongo:
+    image: mongo
+    restart: always
+    networks:
+     - scheduler
+    ports:
+     - 27017:27017
+    environment:
+     MONGO_INITDB_ROOT_USERNAME:
+     MONGO_INITDB_ROOT_PASSWORD:
+
+  nginx:
+    build:
+      nginx
+    networks:
+      - scheduler
+    depends_on:
+      - mongo
+      - mq
+      - master1
+      - master2
+    ports:
+      - 80:80
+
+  mq:
+    image: rabbitmq:management-alpine
+    container_name: rabbitmq
+    environment:
+     - RABBITMQ_DEFAULT_USER=guest
+     - RABBITMQ_DEFAULT_PASS=guest
+    restart: always
+    networks:
+     - scheduler
+    ports:
+     - "15672:15672"
+     - "5672:5672"
+
+  master1:
+    build:
+      master1
+    networks:
+      - scheduler
+    depends_on:
+      - etcd1
+      - etcd2
+      - etcd3
+      - mongo
+      - mq
+
+  master2:
+    build:
+      master2
+    networks:
+      - scheduler
+    depends_on:
+      - etcd1
+      - etcd2
+      - etcd3
+      - mongo
+      - mq
+
+
+  worker1:
+    build:
+      worker1
+    networks:
+      - scheduler
+    depends_on:
+      - etcd1
+      - etcd2
+      - etcd3
+      - mongo
+      - mq
+
+  worker2:
+    build:
+      worker2
+    networks:
+      - scheduler
+    depends_on:
+      - etcd1
+      - etcd2
+      - etcd3
+      - mongo
+      - mq
+
+
+  worker3:
+    build:
+      worker3
+    networks:
+      - scheduler
+    depends_on:
+      - etcd1
+      - etcd2
+      - etcd3
+      - mongo
+      - mq
+
+  etcd1:
+    image: quay.io/coreos/etcd:v3.4.0
+    volumes:
+      - $PWD/etcd:/var/lib/etcd
+    expose:
+      - 2379
+      - 2380
+    networks:
+      - scheduler
+    environment:
+      - ETCDCTL_API=3
+    command:
+      - /usr/local/bin/etcd
+      - --data-dir=/etcd-data
+      - --name
+      - etcd1
+      - --initial-advertise-peer-urls
+      - http://172.16.238.100:2380
+      - --listen-peer-urls
+      - http://0.0.0.0:2380
+      - --advertise-client-urls
+      - http://172.16.238.100:2379
+      - --listen-client-urls
+      - http://0.0.0.0:2379
+      - --initial-cluster
+      - etcd1=http://172.16.238.100:2380,etcd2=http://172.16.238.101:2380,etcd3=http://172.16.238.102:2380
+      - --initial-cluster-state
+      - new
+      - --initial-cluster-token
+      - docker-etcd
+
+  etcd2:
+    image: quay.io/coreos/etcd:v3.4.0
+    volumes:
+      - $PWD/etcd:/var/lib/etcd
+    environment:
+      - ETCDCTL_API=3
+    expose:
+      - 2379
+      - 2380
+    networks:
+      - scheduler
+    command:
+      - /usr/local/bin/etcd
+      - --data-dir=/etcd-data
+      - --name
+      - etcd2
+      - --initial-advertise-peer-urls
+      - --listen-peer-urls
+      - http://0.0.0.0:2380
+      - --advertise-client-urls
+      - --listen-client-urls
+      - http://0.0.0.0:2379
+      - --initial-cluster
+      - etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - --initial-cluster-state
+      - new
+      - --initial-cluster-token
+      - docker-etcd
+
+  etcd3:
+    image: quay.io/coreos/etcd:v3.4.0
+    volumes:
+      - $PWD/etcd:/var/lib/etcd
+    networks:
+      - scheduler
+    environment:
+      - ETCDCTL_API=3
+    expose:
+      - 2379
+      - 2380
+    command:
+      - /usr/local/bin/etcd
+      - --data-dir=/etcd-data
+      - --name
+      - etcd3
+      - --initial-advertise-peer-urls
+      - --listen-peer-urls
+      - http://0.0.0.0:2380
+      - --advertise-client-urls
+      - --listen-client-urls
+      - http://0.0.0.0:2379
+      - --initial-cluster
+      - etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - --initial-cluster-state
+      - new
+      - --initial-cluster-token
+      - docker-etcd
